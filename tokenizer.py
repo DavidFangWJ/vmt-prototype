@@ -1,3 +1,4 @@
+import sys
 from enum import Enum
 
 
@@ -21,7 +22,7 @@ class TokenType(Enum):
         if self == self.BEGIN_OF_GROUP:
             return 'Begin of Group'
         if self == self.END_OF_GROUP:
-            return  'End of Group'
+            return 'End of Group'
         if self == self.SPACE:
             return 'Space'
         if self == self.NEW_PARAGRAPH:
@@ -48,13 +49,34 @@ class TokenizerState(Enum):
     BEGIN_OF_LINE = 0
     MIDLINE = 1
     AFTER_SPACE = 2
-    PREPARE_NUM = 3
-    PREPARE_LEN = 4
-    PREPARE_INSIDE_NUM = 5
-    PREPARE_INSIDE_LEN = 6
 
     # 只用于命令和环境开头。不用于环境结尾。
     SKIP_EOC = 7
+
+
+class StringReader:
+    def __init__(self, input_str):
+        self.string = input_str
+        self.end = len(input_str)
+        self.i = 0
+
+    def has_next(self):
+        return self.i < self.end
+
+    def has_num_char(self, i):
+        return self.i + i <= self.end
+
+    def eat(self):
+        self.i += 1
+        return self.string[self.i - 1]
+
+    def skip(self, step):
+        self.i += step
+
+
+allow_numeric_param = ['标题']
+allow_length_param = ['字号']
+NAN = float('nan')
 
 
 def is_white_space(char):
@@ -63,73 +85,61 @@ def is_white_space(char):
 
 # 生成一个Token列表.
 def get_token_list(input_str):
+    NEW_PARAGRAPH = Token(TokenType.NEW_PARAGRAPH, 0)
+
     state = TokenizerState.BEGIN_OF_LINE
     result = []
-    i = 0
-    end = len(input_str)
-    allow_numeric_param = ['标题']
-    allow_length_param = ['字号']
-    compressed_index = 0
-
-    while i < end:
-        cur_char = input_str[i]
-        # 行首
+    reader = StringReader(input_str)
+    while reader.has_next():
+        cur_char = reader.eat()
         if state == TokenizerState.BEGIN_OF_LINE:
+            while is_white_space(cur_char):
+                cur_char = reader.eat()
             if cur_char == '\n':
-                if result[-1].category != TokenType.NEW_PARAGRAPH:
-                    result.append(Token(TokenType.NEW_PARAGRAPH, 0))
-                i += 1
-                continue
+                if result[-1] != NEW_PARAGRAPH:
+                    result.append(NEW_PARAGRAPH)
             else:
-                state = TokenizerState.AFTER_SPACE
-        if state == TokenizerState.SKIP_EOC:
-            if cur_char == '〛':  # 命令
-                result.append(Token(TokenType.COMMAND, compressed_index))
-            elif cur_char == ']':  # 环境始
-                result.append(Token(TokenType.BEGIN_OF_GROUP, compressed_index))
-            else:
-                print('错误: 命令未正常结束')
-                break
-            state = TokenizerState.MIDLINE
-            i += 1
-            continue
-        # 忽略回车
-        if cur_char == '\n':
-            state = TokenizerState.BEGIN_OF_LINE
-            i += 1
-            continue
-        if state == TokenizerState.AFTER_SPACE:
-            if is_white_space(cur_char):
-                i += 1
-                continue
-            else:
+                reader.skip(-1)
                 state = TokenizerState.MIDLINE
-        # 多数情况下直接放入
-        if state in [TokenizerState.PREPARE_INSIDE_NUM, TokenizerState.PREPARE_LEN, TokenizerState.PREPARE_INSIDE_NUM,
-                     TokenizerState.PREPARE_INSIDE_LEN]:
-            pass  # 读取数字部分
-            if state == TokenizerState.PREPARE_LEN or state == TokenizerState.PREPARE_INSIDE_LEN:
-                pass  # 读取长度单位部分
-            if state == TokenizerState.PREPARE_INSIDE_NUM or state == TokenizerState.PREPARE_INSIDE_LEN:
-                state = TokenizerState.SKIP_EOC
-            else:
-                state = TokenizerState.MIDLINE
-        else:
+        elif state == TokenizerState.MIDLINE:
             if is_white_space(cur_char):
                 result.append(Token(TokenType.SPACE, 0))
                 state = TokenizerState.AFTER_SPACE
-            elif cur_char == '〚':  # 段落开始
-                if i + 3 >= end:  # 命令未结束
-                    print('错误: 命令未正常结束')
-                    break
-                compressed_index = ord(input_str[i + 1]) * 65536 + ord(input_str[i + 2])
-                state = TokenizerState.SKIP_EOC
-                i += 2
-            elif cur_char == '[' and i + 3 < end and input_str[i + 3] == '〛':  # 环境终
-                result.append(Token(TokenType.END_OF_GROUP, ord(input_str[i + 1]) * 65536 + ord(input_str[i + 2])))
-                i += 3
+            elif cur_char == '\n':
+                state = TokenizerState.BEGIN_OF_LINE
+            elif cur_char == '〚':
+                compressed_index = ord(reader.eat()) * 65536
+                compressed_index += ord(reader.eat())
+                if compressed_index in allow_numeric_param:  # 读取数字
+                    pass
+                elif compressed_index in allow_length_param:  # 读取长度
+                    pass
+                cur_char = reader.eat()
+                if cur_char == ']':
+                    result.append(Token(TokenType.BEGIN_OF_GROUP, compressed_index))
+                else:
+                    if cur_char != '〛':
+                        print('错误：缺命令结束符', file=sys.stderr)
+                        reader.skip(-1)
+                    result.append(Token(TokenType.COMMAND, compressed_index))
+            elif cur_char == '[' and reader.has_num_char(3):
+                compressed_index = ord(reader.eat()) * 65536
+                compressed_index += ord(reader.eat())
+                cur_char = reader.eat()
+                if cur_char == '〛':
+                    result.append(Token(TokenType.END_OF_GROUP, compressed_index))
+                else:
+                    result.append(Token(TokenType.CHAR, 0x5B))  # 左括号的ASCII
+                    reader.skip(-3)
             else:
                 result.append(Token(TokenType.CHAR, ord(cur_char)))
-        i += 1
+        elif state == TokenizerState.AFTER_SPACE:
+            while is_white_space(cur_char):
+                cur_char = reader.eat()
+            if cur_char == '\n':
+                state = TokenizerState.BEGIN_OF_LINE
+            else:
+                reader.skip(-1)
+                state = TokenizerState.MIDLINE
     result.append(Token(TokenType.END_OF_FILE, 0))
     return result
