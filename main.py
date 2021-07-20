@@ -9,5 +9,6 @@ if __name__ == '__main__':
     token_list = get_token_list(file_str)
 
     font_library = FontLibrary()
-    font_library.get_font('Noto Serif CJK SC')
+    free_serif = font_library.get_font('FreeSerif', True)
+    print(free_serif.get_glyph_width(3))
     pass

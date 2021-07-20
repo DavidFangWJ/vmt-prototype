@@ -10,11 +10,12 @@ class Font:
     可以自己加入用于读取GSUB、GPOS、cmap、hmtx等表的数据结构。
     """
 
-    def __init__(self, font_dir, index):
+    def __init__(self, font_dir, index, is_western):
         """
         从目录生成字体（待完成）。
         :param font_dir: 字体所在的目录。
         :param index: 如果字体是 ttc，则表示所用字体的序号；否则无意义。
+        :param is_western: 字体是否是西文字体。
         """
         self.font_file = open(font_dir, 'rb')
         self.tables = {}
@@ -31,9 +32,12 @@ class Font:
         num_tables = unpack('>HHL', self.font_file.read(8))[0]
         for i in range(num_tables):
             cur_table_raw = self.font_file.read(16)
-            offset_and_length = unpack('>II', cur_table_raw[8:])
-            self.tables[cur_table_raw[:4].decode()] = offset_and_length
+            offset = unpack('>II', cur_table_raw[8:12])[0]
+            self.tables[cur_table_raw[:4].decode()] = offset
         self.is_cid = self.__is_cid()
+
+        self.upm, self.ascent, self.caps_height = self.__get_typo_data()
+        self.hmtx = self.__get_hmtx(is_western)  # 读取 hmtx 表
 
     def __del__(self):
         """
@@ -58,13 +62,18 @@ class Font:
         if self.is_cid:  # 懒得读 CFF，暂时禁止用 CID 字体生成西文
             print('禁止用 CID 字体充当西文字体！', file=sys.stderr)
             return 1.0
-        pass  # 一般情况
+        if gid > len(self.hmtx):
+            width = self.hmtx[-1]
+        else:
+            width = self.hmtx[gid]
+        return width / self.upm
 
     def process_gsub_liga(self, list_gids):
         """
         对一连串字符自动做连字处理。（待完成）
         :param list_gids: 一个整型列表，解析为 GID。
         """
+        pass
 
     def get_kern(self, gid1, gid2):
         """
@@ -82,7 +91,7 @@ class Font:
         """
         if 'CFF ' not in self.tables.keys():  # ttf
             return False
-        cff_offset = self.tables['CFF '][0]
+        cff_offset = self.tables['CFF ']
 
         self.font_file.seek(cff_offset + 2, 0)
         header_size = unpack('B', self.font_file.read(1))[0]
@@ -111,6 +120,27 @@ class Font:
                 cur = unpack('B', self.font_file.read(1))[0]
                 return cur == 30
 
+    def __get_typo_data(self):
+        self.font_file.seek(self.tables['head'] + 18, 0)
+        upm = unpack('>H', self.font_file.read(2))[0]
+        self.font_file.seek(self.tables['OS/2'] + 68, 0)
+        ascent = unpack('>h', self.font_file.read(2))[0]
+        self.font_file.seek(18, 1)
+        caps_height = unpack('>h', self.font_file.read(2))[0]
+        return upm, ascent, caps_height
+
+    def __get_hmtx(self, is_western):
+        if is_western and not self.is_cid:
+            result = []
+            self.font_file.seek(self.tables['hhea'] + 34, 0)
+            num_hmtx = unpack('>H', self.font_file.read(2))[0]
+            self.font_file.seek(self.tables['hmtx'], 0)
+            for i in range(num_hmtx):
+                result.append(unpack('>HH', self.font_file.read(4))[0])
+            return result
+        else:
+            return None
+
 
 class FontLibrary:
     def __init__(self):
@@ -119,13 +149,19 @@ class FontLibrary:
 
         self.font_dict = {}
 
-    def get_font(self, font_name):
+    def get_font(self, font_name, is_western):
+        """
+        根据字体名查找字体。
+        :param font_name: 字体名。
+        :param is_western: 是否为西文字体（需要 `hmtx` 表）
+        :return: 相应的font对象。
+        """
         if font_name in self.font_dict:
             return self.font_dict[font_name]
 
         # 用fcconfig找到字体位置
         font_dir, index = self.__get_font_dir(font_name)
-        new_font = Font(font_dir, index)
+        new_font = Font(font_dir, index, is_western)
         self.font_dict[font_name] = new_font
         return new_font
 
