@@ -3,6 +3,78 @@ from ctypes import *
 from struct import unpack
 
 
+class Type4CmapTable:
+    """
+    4 型 cmap 表。
+    """
+    def __init__(self, in_file):
+        in_file.seek(2, 1)
+        length, double_seg_count = unpack('>HH', in_file.read(4))
+        in_file.seek(6, 1)
+        length -= 4 * double_seg_count + 16
+
+        self.seg_count = double_seg_count // 2
+
+        self.end_code = unpack('>' + 'H' * self.seg_count, in_file.read(double_seg_count))
+        in_file.seek(2, 1)
+        self.start_code = unpack('>' + 'H' * self.seg_count, in_file.read(double_seg_count))
+        self.id_delta = unpack('>' + 'H' * self.seg_count, in_file.read(double_seg_count))
+        self.id_range_offset = unpack('>' + 'H' * self.seg_count, in_file.read(double_seg_count))
+
+        if length > 0:
+            self.glyph_id_array = unpack('>' + 'H' * (length // 2), in_file.read(length))
+        else:
+            self.glyph_id_array = []
+
+    def get_gid(self, uid):
+        current_segment = 0
+        while current_segment < self.seg_count:
+            if self.end_code[current_segment] > uid:
+                break
+            current_segment += 1
+
+        if current_segment == self.seg_count or self.start_code[current_segment] > uid:  # UID 不存在
+            return 0
+
+        if self.id_range_offset[current_segment] == 0:
+            gid = uid + self.id_delta[current_segment]
+        else:
+            index = uid - self.start_code[current_segment]
+            index += self.id_range_offset[current_segment] / 2 + current_segment - self.seg_count
+            gid = self.glyph_id_array[index] + self.id_delta[current_segment]
+
+        return gid % 65536
+
+
+class Type12CmapTable:
+    """
+    12 型 cmap 表。
+    """
+    def __init__(self, in_file):
+        in_file.seek(12, 1)
+        self.num_group = unpack('>I', in_file.read(4))[0]
+        self.start_code = []
+        self.end_code = []
+        self.start_gid = []
+
+        for i in range(self.num_group):
+            self.start_code.extend(unpack('>I', in_file.read(4)))
+            self.end_code.extend(unpack('>I', in_file.read(4)))
+            self.start_gid.extend(unpack('>I', in_file.read(4)))
+
+    def get_gid(self, uid):
+        current_segment = 0
+        while current_segment < self.num_group:
+            if self.end_code[current_segment] > uid:
+                break
+            current_segment += 1
+
+        if current_segment == self.num_group or self.start_code[current_segment] > uid:  # UID 不存在
+            return 0
+
+        return uid - self.start_code[current_segment] + self.start_gid[current_segment]
+
+
 class Font:
     """
     表示字体的对象。因为 FontConfig 功能不足，不得不自己写。
@@ -36,22 +108,23 @@ class Font:
             self.tables[cur_table_raw[:4].decode()] = offset
         self.is_cid = self.__is_cid()
 
+        self.__init_cmap_table()
         self.upm, self.ascent, self.caps_height = self.__get_typo_data()
         self.hmtx = self.__get_hmtx(is_western)  # 读取 hmtx 表
 
     def __del__(self):
         """
-        析构字体。因为 Python 对象会自动析构，所以只用关闭字体文件。这一点在将来改 C 的时候需要注意。
+        析构字体。因为 Python 对象会自动析构，所以只用关闭字体文件。
         """
         self.font_file.close()
 
     def get_gid(self, uid):
         """
-        从已有的 Unicode 编码值中得出 GID/CID。（待完成）
+        从已有的 Unicode 编码值中得出 GID/CID。
         :param uid: Unicode编码值
         :return: 相应的 GID/CID。
         """
-        pass
+        return self.cmap.get_gid(uid)
 
     def get_glyph_width(self, gid):
         """
@@ -119,6 +192,38 @@ class Font:
             else:
                 cur = unpack('B', self.font_file.read(1))[0]
                 return cur == 30
+
+    def __init_cmap_table(self):
+        offset_cmap = self.tables['cmap']
+        self.font_file.seek(offset_cmap + 2, 0)
+        num_tables = unpack('>H', self.font_file.read(2))[0]
+
+        records = []
+        for i in range(num_tables):
+            records.append(unpack('>II', self.font_file.read(8)))
+
+        cmap_type = 0
+        cmap_offset = 0
+
+        for item in records:
+            if item[0] == 0x030001:
+                cmap_type = 4
+                cmap_offset = item[1]
+            elif item[0] == 0x03000A:
+                cmap_type = 12
+                cmap_offset = item[1]
+            elif item[0] > 0x03000A:
+                break
+        offset_cmap += cmap_offset
+        self.font_file.seek(offset_cmap, 0)
+
+        if cmap_type == 4:
+            self.cmap = Type4CmapTable(self.font_file)
+        elif cmap_type == 12:
+            self.cmap = Type12CmapTable(self.font_file)
+        else:
+            print('字体没有合适的cmap表。', file=sys.stderr)
+            exit(1)
 
     def __get_typo_data(self):
         self.font_file.seek(self.tables['head'] + 18, 0)
