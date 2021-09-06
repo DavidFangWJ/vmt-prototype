@@ -104,7 +104,7 @@ class Font:
         num_tables = unpack('>HHL', self.font_file.read(8))[0]
         for i in range(num_tables):
             cur_table_raw = self.font_file.read(16)
-            offset = unpack('>II', cur_table_raw[8:12])[0]
+            offset = unpack('>I', cur_table_raw[8:12])[0]
             self.tables[cur_table_raw[:4].decode()] = offset
         self.is_cid = self.__is_cid()
 

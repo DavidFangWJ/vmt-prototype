@@ -73,8 +73,27 @@ class StringReader:
     def skip(self, step):
         self.i += step
 
+    def read_number(self):
+        start_pos = self.i
+        allow_decimal = True
+        while self.has_next():
+            cur = self.eat()
+            if cur == '.':
+                if allow_decimal:
+                    allow_decimal = False
+                else:
+                    self.skip(-1)
+                    break
+            elif cur not in '0123456789':
+                self.skip(-1)
+                break
+        section = self.string[start_pos:self.i]
+        return float(section)
 
-allow_numeric_param = ['标题']
+
+allow_numeric_param = [
+    0x68079898  # 标题
+]
 allow_length_param = ['字号']
 NAN = float('nan')
 
@@ -111,9 +130,11 @@ def get_token_list(input_str):
                 compressed_index = ord(reader.eat()) * 65536
                 compressed_index += ord(reader.eat())
                 if compressed_index in allow_numeric_param:  # 读取数字
-                    pass
+                    reader.eat()
+                    num = reader.read_number()
                 elif compressed_index in allow_length_param:  # 读取长度
-                    pass
+                    num = reader.read_number()
+                    pass  # 读取单位符号部分用
                 cur_char = reader.eat()
                 if cur_char == ']':
                     result.append(Token(TokenType.BEGIN_OF_GROUP, compressed_index))

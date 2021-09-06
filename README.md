@@ -26,6 +26,9 @@
 ## `file_reader.py`
 文件读取接口。
 
+## `font_library.py`
+用于读取字体。
+
 ## `tokenizer.py`
 词法分析器（未写出分析数字的部分）。
 
