@@ -23,6 +23,10 @@ class TokenType(Enum):
             return 'Begin of Group'
         if self == self.END_OF_GROUP:
             return 'End of Group'
+        if self == self.NUMBER:
+            return 'Number'
+        if self == self.LENGTH:
+            return 'Length'
         if self == self.SPACE:
             return 'Space'
         if self == self.NEW_PARAGRAPH:
@@ -39,6 +43,10 @@ class Token:
     def __repr__(self):
         if self.category == TokenType.CHAR:
             return '{Character, ' + chr(self.content) + '}'
+        elif self.category == TokenType.NUMBER:
+            return '{' + self.category.__repr__() + ', ' + '%.4f' % self.content + '}'
+        elif self.category == TokenType.LENGTH:
+            return '{' + self.category.__repr__() + ', ' + '%.4f' % self.content + ' mm}'
         elif self.category in [TokenType.COMMAND, TokenType.BEGIN_OF_GROUP, TokenType.END_OF_GROUP]:
             return '{' + self.category.__repr__() + ', ' + chr(self.content // 65536) + chr(self.content % 65536) + '}'
         else:
@@ -94,8 +102,28 @@ class StringReader:
 allow_numeric_param = [
     0x68079898  # 标题
 ]
-allow_length_param = ['字号']
+allow_length_param = [
+    0x5B5753F7 # 字号
+]
 NAN = float('nan')
+
+MM_PER_Q = 0.25
+MM_PER_POINT = 0.3514
+MM_PER_MM = 1
+
+OLD_FONT_SIZE = [
+    14.7590,  # 初号
+    9.6637,   # 一号
+    7.3795,   # 二号
+    5.5346,   # 三号
+    4.8318,   # 四号
+    3.6898,   # 五号
+    2.7673,   # 六号
+    1.8449,   # 七号
+    1.3837,   # 八号
+]
+
+NEW_PARAGRAPH = Token(TokenType.NEW_PARAGRAPH, 0)
 
 
 def is_white_space(char):
@@ -104,8 +132,6 @@ def is_white_space(char):
 
 # 生成一个Token列表.
 def get_token_list(input_str):
-    NEW_PARAGRAPH = Token(TokenType.NEW_PARAGRAPH, 0)
-
     state = TokenizerState.BEGIN_OF_LINE
     result = []
     reader = StringReader(input_str)
@@ -130,11 +156,30 @@ def get_token_list(input_str):
                 compressed_index = ord(reader.eat()) * 65536
                 compressed_index += ord(reader.eat())
                 if compressed_index in allow_numeric_param:  # 读取数字
-                    reader.eat()
                     num = reader.read_number()
+                    result.append(Token(TokenType.NUMBER, num))
                 elif compressed_index in allow_length_param:  # 读取长度
                     num = reader.read_number()
                     pass  # 读取单位符号部分用
+                    # 目前允许的单位符号：Q（级）、pt（点）、mm（毫米）；H（号）使用时会报错误信息
+                    cur_char = reader.eat()
+                    if cur_char == 'H':  # 号数制
+                        print('号数制已经过时，且可能会在未来版本中淘汰，请换用点或级！', file=sys.stderr)
+                        num = OLD_FONT_SIZE[int(num)]
+                    elif cur_char == 'Q':  # 级数制
+                        num *= MM_PER_Q
+                    else:
+                        if reader.has_next():
+                            cur_char += reader.eat()
+                        if cur_char == 'pt':
+                            num *= MM_PER_POINT
+                        elif cur_char == 'mm':
+                            num *= MM_PER_MM
+                        else:
+                            print('长度 %.4f 没有带长度单位，默认为级数。' % num, file=sys.stderr)
+                            num *= MM_PER_Q
+                            reader.skip(-1 * len(cur_char))
+                    result.append(Token(TokenType.LENGTH, num))
                 cur_char = reader.eat()
                 if cur_char == ']':
                     result.append(Token(TokenType.BEGIN_OF_GROUP, compressed_index))
