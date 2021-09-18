@@ -1,6 +1,7 @@
 from file_reader import read_file
 from tokenizer import get_token_list
-from font_library import Font, FontLibrary
+from token_process import process_token
+from global_var import initialize_font_library
 
 
 if __name__ == '__main__':
@@ -8,7 +9,6 @@ if __name__ == '__main__':
 
     token_list = get_token_list(file_str)
 
-    font_library = FontLibrary()
-    free_serif = font_library.get_font('FreeSerif', True)
-    print(free_serif.get_glyph_width(3))
+    initialize_font_library('思源宋体', 'FreeSerif')
+    temp = process_token(token_list)
     pass

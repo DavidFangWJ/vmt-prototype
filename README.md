@@ -29,6 +29,9 @@
 ## `font_library.py`
 用于读取字体。
 
+## `global_var.py`
+用于跨文件的变量（字体列表，字体编号等）。
+
 ## `tokenizer.py`
 词法分析器（未写出分析数字的部分）。
 

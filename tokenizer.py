@@ -11,7 +11,8 @@ class TokenType(Enum):
     NUMBER = 5
     LENGTH = 6
     SPACE = 7
-    NEW_PARAGRAPH = 8
+    NEW_LINE = 8
+    NEW_PARAGRAPH = 9
     END_OF_FILE = 127
 
     def __repr__(self):
@@ -29,6 +30,8 @@ class TokenType(Enum):
             return 'Length'
         if self == self.SPACE:
             return 'Space'
+        if self == self.NEW_LINE:
+            return 'New Line'
         if self == self.NEW_PARAGRAPH:
             return 'New Paragraph'
         if self == self.END_OF_FILE:
@@ -95,15 +98,35 @@ class StringReader:
             elif cur not in '0123456789':
                 self.skip(-1)
                 break
+        if start_pos == self.i:  # 没有数字
+            print('没有数字，默认为0。', file=sys.stderr)
+            return 0
         section = self.string[start_pos:self.i]
         return float(section)
+
+    def read_unit_ratio(self):
+        self.skip(-1)
+        cur_char = self.eat()
+        if cur_char == 'Q':  # 级数制
+            return MM_PER_Q
+        else:
+            if self.has_next():
+                cur_char += self.eat()
+            if cur_char == 'pt':
+                return MM_PER_POINT
+            elif cur_char == 'mm':
+                return MM_PER_MM
+            else:
+                print('没有带长度单位，默认为级数。', file=sys.stderr)
+                self.skip(-1 * len(cur_char))
+                return MM_PER_Q
 
 
 allow_numeric_param = [
     0x68079898  # 标题
 ]
 allow_length_param = [
-    0x5B5753F7 # 字号
+    0x5B5753F7  # 字号
 ]
 NAN = float('nan')
 
@@ -151,6 +174,7 @@ def get_token_list(input_str):
                 result.append(Token(TokenType.SPACE, 0))
                 state = TokenizerState.AFTER_SPACE
             elif cur_char == '\n':
+                result.append(Token(TokenType.NEW_LINE, 0))
                 state = TokenizerState.BEGIN_OF_LINE
             elif cur_char == '〚':
                 compressed_index = ord(reader.eat()) * 65536
@@ -160,25 +184,13 @@ def get_token_list(input_str):
                     result.append(Token(TokenType.NUMBER, num))
                 elif compressed_index in allow_length_param:  # 读取长度
                     num = reader.read_number()
-                    pass  # 读取单位符号部分用
                     # 目前允许的单位符号：Q（级）、pt（点）、mm（毫米）；H（号）使用时会报错误信息
                     cur_char = reader.eat()
                     if cur_char == 'H':  # 号数制
                         print('号数制已经过时，且可能会在未来版本中淘汰，请换用点或级！', file=sys.stderr)
                         num = OLD_FONT_SIZE[int(num)]
-                    elif cur_char == 'Q':  # 级数制
-                        num *= MM_PER_Q
                     else:
-                        if reader.has_next():
-                            cur_char += reader.eat()
-                        if cur_char == 'pt':
-                            num *= MM_PER_POINT
-                        elif cur_char == 'mm':
-                            num *= MM_PER_MM
-                        else:
-                            print('长度 %.4f 没有带长度单位，默认为级数。' % num, file=sys.stderr)
-                            num *= MM_PER_Q
-                            reader.skip(-1 * len(cur_char))
+                        num *= reader.read_unit_ratio()
                     result.append(Token(TokenType.LENGTH, num))
                 cur_char = reader.eat()
                 if cur_char == ']':
@@ -203,6 +215,7 @@ def get_token_list(input_str):
             while is_white_space(cur_char):
                 cur_char = reader.eat()
             if cur_char == '\n':
+                result.append(Token(TokenType.NEW_LINE, 0))
                 state = TokenizerState.BEGIN_OF_LINE
             else:
                 reader.skip(-1)

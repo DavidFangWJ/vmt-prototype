@@ -65,7 +65,7 @@ class Type12CmapTable:
     def get_gid(self, uid):
         current_segment = 0
         while current_segment < self.num_group:
-            if self.end_code[current_segment] > uid:
+            if self.end_code[current_segment] >= uid:
                 break
             current_segment += 1
 
@@ -128,7 +128,7 @@ class Font:
 
     def get_glyph_width(self, gid):
         """
-        计算某个字符的宽度，以 em 为单位。（待完成）
+        计算某个字符的宽度，以 em 为单位。
         :param gid: 字符序号
         :return: 字符宽度，以 em 为单位，为此需要从 `head` 表读取 UPM。
         """
@@ -248,11 +248,13 @@ class Font:
 
 
 class FontLibrary:
-    def __init__(self):
+    def __init__(self, chinese, western):
         self.lib = cdll.LoadLibrary('libfontconfig.so')
         self.config = self.lib.FcInitLoadConfigAndFonts()
 
         self.font_dict = {}
+        self.default_chinese = self.get_font(chinese, False)
+        self.default_western = self.get_font(western, True)
 
     def get_font(self, font_name, is_western):
         """
