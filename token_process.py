@@ -97,7 +97,7 @@ class CharClass(Enum):
             return cls.OTHER_PUNCT  # 短横线
         if char in '+−±×÷∓':
             return cls.MATH_OP  # 数学运算符
-        if char in '<=>≠≒≈≡≢≤≥≪	≫∧∨⊂⊃⊄⊅⊆⊇⊊⊋∈∋∉∪∩∥∦⇒⇔↔∽≌∝⊥⊕⊗':
+        if char in '<=>≠≒≈≡≢≤≥≪≫∧∨⊂⊃⊄⊅⊆⊇⊊⊋∈∋∉∪∩∥∦⇒⇔↔∽≌∝⊥⊕⊗':
             return cls.MATH_REL  # 数学关系符
         if is_cjk(char):
             return cls.IDEOGRAPHIC

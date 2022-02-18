@@ -116,6 +116,10 @@ class StringReader:
                 return MM_PER_POINT
             elif cur_char == 'mm':
                 return MM_PER_MM
+            elif cur_char == 'cm':
+                return MM_PER_CM
+            elif cur_char == 'dd':
+                return MM_PER_DD
             else:
                 print('没有带长度单位，默认为级数。', file=sys.stderr)
                 self.skip(-1 * len(cur_char))
@@ -132,7 +136,9 @@ NAN = float('nan')
 
 MM_PER_Q = 0.25
 MM_PER_POINT = 0.3514
-MM_PER_MM = 1
+MM_PER_MM = 1.0
+MM_PER_CM = 10.0
+MM_PER_DD = 0.376
 
 OLD_FONT_SIZE = [
     14.7590,  # 初号
