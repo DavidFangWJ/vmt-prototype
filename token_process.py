@@ -1,4 +1,7 @@
 from enum import Enum
+
+from typing import List
+
 from tokenizer import TokenType
 from global_var import get_default_chinese_font, get_default_western_font, get_font_encoding
 
@@ -77,8 +80,6 @@ class CharClass(Enum):
     MATH_OP = 8
     MATH_REL = 9
 
-    HALF_WIDTHS = [LEFT_PUNCT, RIGHT_PUNCT, MID_PUNCT, COMMAS, PERIODS]
-
     @classmethod
     def get_class(cls, char):
         if char in '([{‘“〔〈《「『【〖':
@@ -120,18 +121,26 @@ class Glyph:
             self.yshift = CHINESE_SHIFT
             self.code = CHINESE_FONT.get_gid(code)
             self.font = get_font_encoding(CHINESE_FONT, CHINESE_FONT_SIZE)
-        elif self.cclass in CharClass.HALF_WIDTHS:
+        elif self.cclass in [CharClass.LEFT_PUNCT, CharClass.RIGHT_PUNCT, CharClass.MID_PUNCT,
+                             CharClass.COMMAS, CharClass.PERIODS]:
             self.width /= 2
 
 
 class Glue:
-    def __init__(self, default, plus, plus_priority, minus, minus_priority, allow_linebreak):
+    def __init__(self, default, plus, plus_priority, minus, minus_priority, end_width,
+                 allow_linebreak):
         self.default = default
         self.plus = plus
         self.plus_priority = plus_priority
         self.minus = minus
         self.minus_priority = minus_priority
+        self.end_width = end_width
         self.allow_linebreak = allow_linebreak
+
+    def __repr__(self):
+        return "{%f plus<%d> %f minus<%d> %f, end width %f, %s}" %\
+               (self.default, self.plus_priority, self.plus, self.minus_priority, self.minus,
+                self.end_width, self.allow_linebreak)
 
 
 class HorElementType(Enum):
@@ -142,12 +151,76 @@ class HorElementType(Enum):
 
 
 class HBox:
-    def __init__(self, t, content):
+    def __init__(self, t: HorElementType, content):
         self.type = t
         if t == HorElementType.GLYPH:
             self.content = Glyph(content)
+        elif t == HorElementType.SPACE:
+            self.content = Glue(content[0], content[1], content[2], content[3],
+                                content[4], content[5], content[6])
         else:
             self.content = content
+
+    def __repr__(self):
+        if self.type == HorElementType.GLYPH:
+            return "{Glyph, %d}" % self.content.code
+        elif self.type == HorElementType.SPACE:
+            return "{Glue, %s}" % self.content.__repr__()
+
+
+def append_glue_to(hlist: List[HBox], glue_arg: List):
+    hlist.append(HBox(HorElementType.SPACE, glue_arg))
+
+
+def adjust_glue(hlist: List[HBox]):
+    # 在最后两个字符间增加合适的空格量。一般来说没有空格就无法在此处换行。
+    if len(hlist) < 2:
+        return
+    second_last = hlist[-2]
+    if second_last.type != HorElementType.GLYPH:  # 不是字符
+        return
+    last = hlist[-1]
+    hlist = hlist[:-1]
+    if second_last.content.cclass == CharClass.MID_PUNCT:  # 中点之后
+        glue_width = second_last.content.width  # 两个都是中点
+        if last.content.cclass == CharClass.MID_PUNCT:
+            glue_width += last.content.width
+        glue_width /= 2
+        append_glue_to(hlist, [glue_width, 0.0, 0, glue_width, 2, second_last.content.width, True])
+    elif last.content.cclass == CharClass.MID_PUNCT:  # 中点之前
+        glue_width = last.content.width / 2
+        if second_last.content.cclass == CharClass.COMMAS:  # 逗号加中点
+            append_glue_to(hlist, [second_last.content.width, 0.0, 0, second_last.content.width, 3,
+                                   second_last.content.width, False])
+        elif second_last.content.cclass == CharClass.PERIODS:  # 句号加中点
+            append_glue_to(hlist, [second_last.content.width, 0.0, 0, 0.0, 0,
+                                   second_last.content.width, False])
+        append_glue_to(hlist, [glue_width, 0.0, 0, glue_width, 2, 0.0, False])
+    elif second_last.content.cclass in [CharClass.RIGHT_PUNCT, CharClass.COMMAS]:  # 右标点之后
+        if last.content.cclass not in [CharClass.RIGHT_PUNCT, CharClass.COMMAS, CharClass.PERIODS]:
+            append_glue_to(hlist, [second_last.content.width, 0.0, 0, second_last.content.width, 3,
+                                   second_last.content.width, True])
+    elif second_last.content.cclass == CharClass.PERIODS:  # 句号
+        if last.content.cclass not in [CharClass.RIGHT_PUNCT, CharClass.COMMAS, CharClass.PERIODS]:
+            append_glue_to(hlist, [second_last.content.width, 0.0, 0, 0.0, 0,
+                                   second_last.content.width, True])
+    elif last.content.cclass == CharClass.LEFT_PUNCT:  # 左标点
+        append_glue_to(hlist, [last.content.width, 0.0, 0, last.content.width, 3, 0.0, True])
+    # 汉字和西文间
+    elif second_last.content.cclass == CharClass.IDEOGRAPHIC\
+            and last.content.cclass == CharClass.WESTERN:
+        base_width = second_last.content.width / 4
+        append_glue_to(hlist, [base_width, base_width, 2, base_width / 2, 4, 0.0, True])
+    elif second_last.content.cclass == CharClass.WESTERN\
+            and last.content.cclass == CharClass.IDEOGRAPHIC:
+        base_width = last.content.width / 4
+        append_glue_to(hlist, [base_width, base_width, 2, base_width / 2, 4, 0.0, True])
+    # 汉字和汉字间
+    elif second_last.content.cclass == CharClass.IDEOGRAPHIC\
+            and last.content.cclass == CharClass.IDEOGRAPHIC:
+        append_glue_to(hlist, [0.0, second_last.content.width / 4, 3, 0.0, 0, 0.0, True])
+    hlist.append(last)
+    pass
 
 
 class TokenIterator:
@@ -171,15 +244,22 @@ def process_token(token_list):
     # 初始化字体
     set_chinese_font(get_default_chinese_font())
     set_western_font(get_default_western_font())
+    set_font_size(3.75)
 
     iterator = TokenIterator(token_list)
     paragraph_vlist = []
 
     current_hlist = []
+    western_temp_list = []
 
     while iterator.has_next():
         cur_token = iterator.next_token()
         if cur_token.category == TokenType.CHAR:
-            current_hlist.append(HBox(HorElementType.GLYPH, cur_token.content))
+            hbox_glyph = HBox(HorElementType.GLYPH, cur_token.content)
+            if hbox_glyph.content.cclass == CharClass.WESTERN:  # 西文字符特别处理
+                western_temp_list.append(hbox_glyph)
+            else:
+                current_hlist.append(hbox_glyph)
+                adjust_glue(current_hlist)
             pass
     return current_hlist
