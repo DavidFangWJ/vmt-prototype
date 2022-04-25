@@ -179,8 +179,7 @@ def adjust_glue(hlist: List[HBox]):
     second_last = hlist[-2]
     if second_last.type != HorElementType.GLYPH:  # 不是字符
         return
-    last = hlist[-1]
-    hlist = hlist[:-1]
+    last = hlist.pop()
     if second_last.content.cclass == CharClass.MID_PUNCT:  # 中点之后
         glue_width = second_last.content.width  # 两个都是中点
         if last.content.cclass == CharClass.MID_PUNCT:
@@ -240,6 +239,10 @@ class TokenIterator:
         self.i += step
 
 
+def process_western_temp_list(hlist: List[HBox]):
+    pass
+
+
 def process_token(token_list):
     # 初始化字体
     set_chinese_font(get_default_chinese_font())
@@ -259,7 +262,18 @@ def process_token(token_list):
             if hbox_glyph.content.cclass == CharClass.WESTERN:  # 西文字符特别处理
                 western_temp_list.append(hbox_glyph)
             else:
+                if len(western_temp_list) > 0:
+                    process_western_temp_list(western_temp_list)
+                    current_hlist.append(western_temp_list[0])
+                    adjust_glue(current_hlist)
+                    current_hlist.extend(western_temp_list[1:])
                 current_hlist.append(hbox_glyph)
                 adjust_glue(current_hlist)
             pass
+        if cur_token.category == TokenType.NEW_PARAGRAPH or cur_token.category == TokenType.END_OF_FILE:
+            if len(western_temp_list) > 0:
+                process_western_temp_list(western_temp_list)
+                current_hlist.append(western_temp_list[0])
+                adjust_glue(current_hlist)
+                current_hlist.extend(western_temp_list[1:])
     return current_hlist
