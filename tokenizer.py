@@ -1,230 +1,82 @@
-import sys
+import re
 from enum import Enum
+from typing import List
+from item_type import ItemType, TokenNode
 
 
-class TokenType(Enum):
-    DEFAULT = 0
-    CHAR = 1
-    COMMAND = 2
-    BEGIN_OF_GROUP = 3
-    END_OF_GROUP = 4
-    NUMBER = 5
-    LENGTH = 6
-    SPACE = 7
-    NEW_LINE = 8
-    NEW_PARAGRAPH = 9
-    END_OF_FILE = 127
-
-    def __repr__(self):
-        if self == self.CHAR:
-            return 'Character'
-        if self == self.COMMAND:
-            return 'Command'
-        if self == self.BEGIN_OF_GROUP:
-            return 'Begin of Group'
-        if self == self.END_OF_GROUP:
-            return 'End of Group'
-        if self == self.NUMBER:
-            return 'Number'
-        if self == self.LENGTH:
-            return 'Length'
-        if self == self.SPACE:
-            return 'Space'
-        if self == self.NEW_LINE:
-            return 'New Line'
-        if self == self.NEW_PARAGRAPH:
-            return 'New Paragraph'
-        if self == self.END_OF_FILE:
-            return 'End of File'
+# unit_factor = {'mm': 1.0, 'cm': 10.0, 'pt': 0.3514}
 
 
-class Token:
-    def __init__(self, category, content):
-        self.category = category
-        self.content = content
+def generate_token(content: str) -> TokenNode:
+    # list_of_keywords = ['版面', '宽度', '音符字号', '歌词字号', '字体', '每拍宽度', '简谱', '五线谱', '谱表']
+    list_of_keywords = ['版面', '简谱', '五线谱', '歌词中', '谱表']
+    if content in list_of_keywords:
+        return TokenNode(ItemType.KEYWORD, content)
 
-    def __repr__(self):
-        if self.category == TokenType.CHAR:
-            return '{Character, ' + chr(self.content) + '}'
-        elif self.category == TokenType.NUMBER:
-            return '{' + self.category.__repr__() + ', ' + '%.4f' % self.content + '}'
-        elif self.category == TokenType.LENGTH:
-            return '{' + self.category.__repr__() + ', ' + '%.4f' % self.content + ' mm}'
-        elif self.category in [TokenType.COMMAND, TokenType.BEGIN_OF_GROUP, TokenType.END_OF_GROUP]:
-            return '{' + self.category.__repr__() + ', ' + chr(self.content // 65536) + chr(self.content % 65536) + '}'
-        else:
-            return '{' + self.category.__repr__() + '}'
+    match = re.match(r'\d+(\.\d*)?', content)
+    if match:
+        number = float(match.group(0))
+        remainder = content[match.end():]
+        if re.fullmatch(r'[A-Za-z]+', remainder):
+            # print('不合法单位：%s，默认视为毫米。' % remainder)
+            return TokenNode(ItemType.DIMEN, (number, remainder))
+        elif len(remainder) == 0:
+            return TokenNode(ItemType.NUMBER, number)
 
-
-class TokenizerState(Enum):
-    BEGIN_OF_LINE = 0
-    MIDLINE = 1
-    AFTER_SPACE = 2
-
-    # 只用于命令和环境开头。不用于环境结尾。
-    SKIP_EOC = 7
+    return TokenNode(ItemType.IDENTIFIER, content)
 
 
-class StringReader:
-    def __init__(self, input_str):
-        self.string = input_str
-        self.end = len(input_str)
-        self.i = 0
-
-    def has_next(self):
-        return self.i < self.end
-
-    def has_num_char(self, i):
-        return self.i + i <= self.end
-
-    def eat(self):
-        self.i += 1
-        return self.string[self.i - 1]
-
-    def skip(self, step):
-        self.i += step
-
-    def read_number(self):
-        start_pos = self.i
-        allow_decimal = True
-        while self.has_next():
-            cur = self.eat()
-            if cur == '.':
-                if allow_decimal:
-                    allow_decimal = False
-                else:
-                    self.skip(-1)
-                    break
-            elif cur not in '0123456789':
-                self.skip(-1)
-                break
-        if start_pos == self.i:  # 没有数字
-            print('没有数字，默认为0。', file=sys.stderr)
-            return 0
-        section = self.string[start_pos:self.i]
-        return float(section)
-
-    def read_unit_ratio(self):
-        self.skip(-1)
-        cur_char = self.eat()
-        if cur_char == 'Q':  # 级数制
-            return MM_PER_Q
-        else:
-            if self.has_next():
-                cur_char += self.eat()
-            if cur_char == 'pt':
-                return MM_PER_POINT
-            elif cur_char == 'mm':
-                return MM_PER_MM
-            elif cur_char == 'cm':
-                return MM_PER_CM
-            elif cur_char == 'dd':
-                return MM_PER_DD
-            else:
-                print('没有带长度单位，默认为级数。', file=sys.stderr)
-                self.skip(-1 * len(cur_char))
-                return MM_PER_Q
-
-
-allow_numeric_param = [
-    0x68079898  # 标题
-]
-allow_length_param = [
-    0x5B5753F7  # 字号
-]
-NAN = float('nan')
-
-MM_PER_Q = 0.25
-MM_PER_POINT = 0.3514
-MM_PER_MM = 1.0
-MM_PER_CM = 10.0
-MM_PER_DD = 0.376
-
-OLD_FONT_SIZE = [
-    14.7590,  # 初号
-    9.6637,   # 一号
-    7.3795,   # 二号
-    5.5346,   # 三号
-    4.8318,   # 四号
-    3.6898,   # 五号
-    2.7673,   # 六号
-    1.8449,   # 七号
-    1.3837,   # 八号
-]
-
-NEW_PARAGRAPH = Token(TokenType.NEW_PARAGRAPH, 0)
-
-
-def is_white_space(char):
-    return char == ' ' or char == '\t'
-
-
-# 生成一个Token列表.
-def get_token_list(input_str):
-    state = TokenizerState.BEGIN_OF_LINE
+def tokenize(content: str) -> List[TokenNode]:
+    length = len(content)
     result = []
-    reader = StringReader(input_str)
-    while reader.has_next():
-        cur_char = reader.eat()
-        if state == TokenizerState.BEGIN_OF_LINE:
-            while is_white_space(cur_char):
-                cur_char = reader.eat()
-            if cur_char == '\n':
-                if result[-1] != NEW_PARAGRAPH:
-                    result.append(NEW_PARAGRAPH)
-            else:
-                reader.skip(-1)
-                state = TokenizerState.MIDLINE
-        elif state == TokenizerState.MIDLINE:
-            if is_white_space(cur_char):
-                result.append(Token(TokenType.SPACE, 0))
-                state = TokenizerState.AFTER_SPACE
-            elif cur_char == '\n':
-                result.append(Token(TokenType.NEW_LINE, 0))
-                state = TokenizerState.BEGIN_OF_LINE
-            elif cur_char == '〚':
-                compressed_index = ord(reader.eat()) * 65536
-                compressed_index += ord(reader.eat())
-                if compressed_index in allow_numeric_param:  # 读取数字
-                    num = reader.read_number()
-                    result.append(Token(TokenType.NUMBER, num))
-                elif compressed_index in allow_length_param:  # 读取长度
-                    num = reader.read_number()
-                    # 目前允许的单位符号：Q（级）、pt（点）、mm（毫米）；H（号）使用时会报错误信息
-                    cur_char = reader.eat()
-                    if cur_char == 'H':  # 号数制
-                        print('号数制已经过时，且可能会在未来版本中淘汰，请换用点或级！', file=sys.stderr)
-                        num = OLD_FONT_SIZE[int(num)]
-                    else:
-                        num *= reader.read_unit_ratio()
-                    result.append(Token(TokenType.LENGTH, num))
-                cur_char = reader.eat()
-                if cur_char == ']':
-                    result.append(Token(TokenType.BEGIN_OF_GROUP, compressed_index))
-                else:
-                    if cur_char != '〛':
-                        print('错误：缺命令结束符', file=sys.stderr)
-                        reader.skip(-1)
-                    result.append(Token(TokenType.COMMAND, compressed_index))
-            elif cur_char == '[' and reader.has_num_char(3):
-                compressed_index = ord(reader.eat()) * 65536
-                compressed_index += ord(reader.eat())
-                cur_char = reader.eat()
-                if cur_char == '〛':
-                    result.append(Token(TokenType.END_OF_GROUP, compressed_index))
-                else:
-                    result.append(Token(TokenType.CHAR, 0x5B))  # 左括号的ASCII
-                    reader.skip(-3)
-            else:
-                result.append(Token(TokenType.CHAR, ord(cur_char)))
-        elif state == TokenizerState.AFTER_SPACE:
-            while is_white_space(cur_char):
-                cur_char = reader.eat()
-            if cur_char == '\n':
-                result.append(Token(TokenType.NEW_LINE, 0))
-                state = TokenizerState.BEGIN_OF_LINE
-            else:
-                reader.skip(-1)
-                state = TokenizerState.MIDLINE
-    result.append(Token(TokenType.END_OF_FILE, 0))
+    current = ''
+
+    pos = 0
+    while pos < length:
+        current_char = content[pos]
+        if current_char in ' \t\n;={},"' and len(current) > 0:
+            result.append(generate_token(current))
+            current = ''
+        while current_char in ' \t':
+            pos += 1
+            current_char = content[pos]
+        if current_char == '%':
+            while current_char != '\n':
+                pos += 1
+                current_char = content[pos]
+        elif current_char == '=':
+            result.append(TokenNode(ItemType.EQ, None))
+        elif current_char == '{':
+            result.append(TokenNode(ItemType.BRACE_LEFT, pos))
+        elif current_char == '}':
+            if result[-1].type == ItemType.END_OF_LINE:
+                result.pop()
+            result.append(TokenNode(ItemType.BRACE_RIGHT, pos))
+        elif current_char == '\n' or current_char == ';':
+            if len(result) > 0 and result[-1].type != ItemType.END_OF_LINE\
+                    and result[-1].type != ItemType.BRACE_LEFT:
+                result.append(TokenNode(ItemType.END_OF_LINE, pos))
+        elif current_char == ',':
+            result.append(TokenNode(ItemType.COMMA, None))
+        elif current_char == '"':
+            pos += 1
+            current_char = content[pos]
+            while current_char != '"':
+                current += current_char
+                pos += 1
+                if pos == len(content):
+                    print("字符串双引号不匹配")
+                    exit(1)
+                current_char = content[pos]
+                pass
+            result.append(TokenNode(ItemType.STRING, current))
+            current = ''
+        else:
+            current += current_char
+        pos += 1
+
+    while result[-1].type == ItemType.END_OF_LINE:
+        result.pop()
+    result.append(TokenNode(ItemType.END_OF_FILE, None))
+
     return result

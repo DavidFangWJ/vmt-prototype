@@ -1,0 +1,70 @@
+F  -> S F' 语句串
+F' -> ε
+F' -> eol S F'
+S  -> L  语句
+S  -> A  赋值或列表 (为消除左因子，赋值和列表可以暂时用相同的产生式)
+L  -> k { F }  版面/谱表
+A  -> i A'
+A' -> = R  赋值
+A' -> I' L'  列表
+L' -> ε
+L' -> , I L'
+R  -> n  数字
+R  -> l  长度
+R  -> s  字符串
+R  -> j  简谱
+R  -> w  五线谱
+R  -> c  歌词
+I  -> i I'
+I' -> ε
+I' -> { i }
+
+项目类型：
+F F' S L A A' L' R I I'
+k i n l s j w c
+{ } = , eol ε
+
+Non-terminals: F S F' L A A' R I' L' I
+Terminals: eol k { } i = , n l s j w c
+EPS = F' A' I' L'
+FIRST[F] = k i
+FIRST[S] = k i
+FIRST[F'] = eol
+FIRST[L] = k
+FIRST[A] = i
+FIRST[A'] = { = ,
+FIRST[R] = n l s j w c
+FIRST[I'] = {
+FIRST[L'] = ,
+FIRST[I] = i
+FOLLOW[F] = }
+FOLLOW[S] = eol }
+FOLLOW[F'] = }
+FOLLOW[L] = eol }
+FOLLOW[A] = eol }
+FOLLOW[A'] = eol }
+FOLLOW[R] = eol }
+FOLLOW[I'] = eol } ,
+FOLLOW[L'] = eol }
+FOLLOW[I] = eol } ,
+PREDICT:
+F ->  S F' : k i
+F' -> epsilon : }
+F' ->  eol S F' : eol
+S ->  L : k
+S ->  A : i
+L ->  k { F } : k
+A ->  i A' : i
+A' ->  = R : =
+A' ->  I' L' : eol { } ,
+L' -> epsilon : eol }
+L' ->  , I L' : ,
+R ->  n : n
+R ->  l : l
+R ->  s : s
+R ->  j : j
+R ->  w : w
+R ->  c : c
+I ->  i I' : i
+I' -> epsilon : eol } ,
+I' ->  { i } : {
