@@ -57,26 +57,74 @@ predict_table: Dict[Tuple[ItemType, ItemType], List[ItemType]] = {
 }
 
 
+def match_brace_close(index: int, tokens: List[TokenNode]) -> int:
+    depth = 1
+    while depth > 0:
+        index += 1
+        if index == len(tokens):
+            print('错误：括号未匹配')
+            exit(1)
+        current = tokens[index]
+        if current.type == ItemType.BRACE_LEFT:
+            depth += 1
+        elif current.type == ItemType.BRACE_RIGHT:
+            depth -= 1
+    return index
+
+
+def match_music(index: int, tokens: List[TokenNode], node_type: ItemType, function)\
+        -> Tuple[TokenNode, int]:
+    """
+    已知前提条件：index的位置是关键词“简谱”或“五线谱”的下一个位置
+    :param index:
+    :param tokens:
+    :param node_type:
+    :param function:
+    :return:
+    """
+    result = []
+    # 第一个括号
+    if tokens[index].type != ItemType.BRACE_LEFT:
+        print('错误：关键字后应有括号')
+        exit(1)
+    index_first_right = match_brace_close(index + 1, tokens)
+    tokens[index_first_right].type = ItemType.END_OF_FILE
+    node1 = parse(tokens[index + 1:index_first_right + 1], '')
+    # node, index = match_document(index + 1)
+    # result.append(node)
+    # if tokens[index].type != TokenType.BRACE_RIGHT:
+    #     print('错误：括号未匹配')
+    #     exit(1)
+    # index += 1
+    # if tokens[index].type != TokenType.BRACE_LEFT:
+    #     print('错误：关键字后应有括号')
+    #     exit(1)
+    # end_point = match_brace_close(index)
+    # music_section = original_text[tokens[index].content + 1:tokens[end_point].content]
+    pass
+
+
 def parse(tokens: List[TokenNode], original_text: str) -> TokenNode:
     pred_stack = [TokenNode(ItemType.END_OF_FILE, None)]
     offset = 0
     tree_root = TokenNode(ItemType.DOCUMENT, None)
     pred_stack.append(tree_root)
 
+    type_next = tokens[0].type
     while len(pred_stack) > 1:
-        type_next = tokens[offset].type
         # 遇到简谱、五线谱和歌词就重新tokenize
         if type_next == ItemType.KEYWORD:
             if tokens[offset].content in ['简谱', '五线谱', '歌词中']:
-                pass  # 将来要对相关部分重新tokenize
+                match_music(offset, tokens, None, None)
+                pass  # 将来要对相关部分重新tokenize，并且要改type_next
 
         # 先判断可不可以移出符号
         type_top = pred_stack[-1].type
-        type_next = tokens[offset].type
         if type_top == type_next:
             pred_stack[-1].content = tokens[offset].content
             pred_stack.pop()
             offset += 1
+            type_next = tokens[offset].type
             continue
         # 如果栈顶的终结符不匹配，直接报错
         if type_top.is_terminal():
@@ -92,7 +140,8 @@ def parse(tokens: List[TokenNode], original_text: str) -> TokenNode:
         old_top.content = []
         for i in list_nodes:
             old_top.content.append(TokenNode(i, None))
-        pred_stack.extend(old_top.content)
+        if list_nodes[0] != ItemType.EMPTY:
+            pred_stack.extend(old_top.content)
         old_top.content.reverse()
 
     return tree_root
