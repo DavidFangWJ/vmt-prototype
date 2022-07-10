@@ -1,7 +1,7 @@
 # 旧版的LR分析器，不再维护了。
 
-from enum import Enum
 from typing import List
+from item_type import ItemType, TokenNode
 
 
 class JianpuNote:
@@ -13,19 +13,11 @@ class JianpuNote:
         self.octave = octave
         self.underline = underline
 
-
-class JianpuTokenType(Enum):
-    JIANPU_NOTE = 19
-    EMBED_COMMAND = 20
+    def __repr__(self):
+        return '{Note = %d, octave = %d, underline = %d}' % (self.note, self.octave, self.underline)
 
 
-class JianpuToken:
-    def __init__(self, token_type: JianpuTokenType, content):
-        self.type = token_type
-        self.content = content
-
-
-def tokenize(content: str) -> List[JianpuToken]:
+def tokenize(content: str) -> List[TokenNode]:
     length = len(content)
     result = []
 
@@ -33,8 +25,7 @@ def tokenize(content: str) -> List[JianpuToken]:
     while pos < length:
         current_char = content[pos]
         if current_char in '01234567':
-            result.append(JianpuToken(JianpuTokenType.JIANPU_NOTE,
-                                      JianpuNote(int(current_char), 0, 0)))
+            result.append(TokenNode(ItemType.JIANPU_NOTE, JianpuNote(int(current_char), 0, 0)))
             if pos == length - 1:
                 break
             index = ';:,\'"`'.find(content[pos + 1])

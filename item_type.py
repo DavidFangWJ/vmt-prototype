@@ -30,6 +30,9 @@ class ItemType(Enum):
     RHS = 22
     ITEM = 23
     ITEM_SUFFIX = 24
+    # 简谱
+    JIANPU_NOTE = 25
+    JIANPU_COMMAND = 26
 
     def is_terminal(self) -> bool:
         return self.value < self.DOCUMENT.value

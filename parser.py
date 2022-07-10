@@ -1,6 +1,7 @@
 from typing import Tuple, List, Dict
 
 from item_type import ItemType, TokenNode
+import parser_jianpu
 
 
 # 词典中每一项的键是栈顶-下一个字符的对，值是逆序存入的推导式右侧结果。
@@ -45,6 +46,7 @@ predict_table: Dict[Tuple[ItemType, ItemType], List[ItemType]] = {
     (ItemType.RHS, ItemType.JIANPU): [ItemType.JIANPU],
     (ItemType.RHS, ItemType.STAFF): [ItemType.STAFF],
     (ItemType.RHS, ItemType.LYRIC): [ItemType.LYRIC],
+    (ItemType.RHS, ItemType.IDENTIFIER): [ItemType.IDENTIFIER],
     (ItemType.ITEM, ItemType.IDENTIFIER): [ItemType.ITEM_SUFFIX, ItemType.IDENTIFIER],
     # 19
     (ItemType.ITEM_SUFFIX, ItemType.BRACE_RIGHT): [ItemType.EMPTY],
@@ -55,6 +57,9 @@ predict_table: Dict[Tuple[ItemType, ItemType], List[ItemType]] = {
     (ItemType.ITEM_SUFFIX, ItemType.BRACE_LEFT):
         [ItemType.BRACE_RIGHT, ItemType.IDENTIFIER, ItemType.BRACE_LEFT]
 }
+
+
+global original_text
 
 
 def match_brace_close(index: int, tokens: List[TokenNode]) -> int:
@@ -87,35 +92,48 @@ def match_music(index: int, tokens: List[TokenNode], node_type: ItemType, functi
     if tokens[index].type != ItemType.BRACE_LEFT:
         print('错误：关键字后应有括号')
         exit(1)
-    index_first_right = match_brace_close(index + 1, tokens)
-    tokens[index_first_right].type = ItemType.END_OF_FILE
-    node1 = parse(tokens[index + 1:index_first_right + 1], '')
-    # node, index = match_document(index + 1)
-    # result.append(node)
-    # if tokens[index].type != TokenType.BRACE_RIGHT:
-    #     print('错误：括号未匹配')
-    #     exit(1)
-    # index += 1
-    # if tokens[index].type != TokenType.BRACE_LEFT:
-    #     print('错误：关键字后应有括号')
-    #     exit(1)
-    # end_point = match_brace_close(index)
-    # music_section = original_text[tokens[index].content + 1:tokens[end_point].content]
+    end_point = match_brace_close(index + 1, tokens)
+    tokens[end_point].type = ItemType.END_OF_FILE
+    result.append(parse_impl(tokens[index + 1:end_point + 1]))
+    index = end_point + 1
+    if tokens[index].type != ItemType.BRACE_LEFT:
+        print('错误：乐谱结构应有第二个组')
+        exit(1)
+    end_point = match_brace_close(index + 1, tokens)
+    music_section = original_text[tokens[index].content + 1:tokens[end_point].content]
+    # 先摆烂
+    music_result = None
+    if node_type == ItemType.JIANPU:
+        music_result = parser_jianpu.tokenize(music_section)
+    result.append(None)
+    result = TokenNode(node_type, result)
+    return result, end_point + 1
     pass
 
 
-def parse(tokens: List[TokenNode], original_text: str) -> TokenNode:
+def parse(tokens: List[TokenNode], _original_text: str) -> TokenNode:
+    global original_text
+    original_text = _original_text
+
+    return parse_impl(tokens)
+
+
+def parse_impl(tokens: List[TokenNode]) -> TokenNode:
     pred_stack = [TokenNode(ItemType.END_OF_FILE, None)]
     offset = 0
     tree_root = TokenNode(ItemType.DOCUMENT, None)
     pred_stack.append(tree_root)
+
+    str_to_type = {'简谱': ItemType.JIANPU, '五线谱': ItemType.STAFF, '歌词中': ItemType.LYRIC}
 
     type_next = tokens[0].type
     while len(pred_stack) > 1:
         # 遇到简谱、五线谱和歌词就重新tokenize
         if type_next == ItemType.KEYWORD:
             if tokens[offset].content in ['简谱', '五线谱', '歌词中']:
-                match_music(offset, tokens, None, None)
+                type_next = str_to_type[tokens[offset].content]
+                node, index = match_music(offset + 1, tokens, type_next, None)
+                tokens = [*tokens[:offset], node, *tokens[index:]]
                 pass  # 将来要对相关部分重新tokenize，并且要改type_next
 
         # 先判断可不可以移出符号
@@ -142,6 +160,6 @@ def parse(tokens: List[TokenNode], original_text: str) -> TokenNode:
             old_top.content.append(TokenNode(i, None))
         if list_nodes[0] != ItemType.EMPTY:
             pred_stack.extend(old_top.content)
-        old_top.content.reverse()
+            old_top.content.reverse()
 
     return tree_root
