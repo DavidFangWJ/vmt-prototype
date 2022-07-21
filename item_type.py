@@ -33,6 +33,9 @@ class ItemType(Enum):
     # 简谱
     JIANPU_NOTE = 25
     JIANPU_COMMAND = 26
+    # 五线谱
+    STAFF_NOTE = 27
+    STAFF_COMMAND = 28
 
     def is_terminal(self) -> bool:
         return self.value < self.DOCUMENT.value

@@ -2,6 +2,7 @@ from typing import Tuple, List, Dict
 
 from item_type import ItemType, TokenNode
 import parser_jianpu
+import parser_staff
 
 
 # 词典中每一项的键是栈顶-下一个字符的对，值是逆序存入的推导式右侧结果。
@@ -101,11 +102,7 @@ def match_music(index: int, tokens: List[TokenNode], node_type: ItemType, functi
         exit(1)
     end_point = match_brace_close(index + 1, tokens)
     music_section = original_text[tokens[index].content + 1:tokens[end_point].content]
-    # 先摆烂
-    music_result = None
-    if node_type == ItemType.JIANPU:
-        music_result = parser_jianpu.tokenize(music_section)
-    result.append(None)
+    result.append(function(music_section))
     result = TokenNode(node_type, result)
     return result, end_point + 1
     pass
@@ -124,15 +121,17 @@ def parse_impl(tokens: List[TokenNode]) -> TokenNode:
     tree_root = TokenNode(ItemType.DOCUMENT, None)
     pred_stack.append(tree_root)
 
-    str_to_type = {'简谱': ItemType.JIANPU, '五线谱': ItemType.STAFF, '歌词中': ItemType.LYRIC}
+    str_to_type = {'简谱': (ItemType.JIANPU, parser_jianpu.tokenize),
+                   '五线谱': (ItemType.STAFF, parser_staff.tokenize),
+                   '歌词中': (ItemType.LYRIC, None)}
 
     type_next = tokens[0].type
     while len(pred_stack) > 1:
         # 遇到简谱、五线谱和歌词就重新tokenize
         if type_next == ItemType.KEYWORD:
             if tokens[offset].content in ['简谱', '五线谱', '歌词中']:
-                type_next = str_to_type[tokens[offset].content]
-                node, index = match_music(offset + 1, tokens, type_next, None)
+                type_next, fun_next = str_to_type[tokens[offset].content]
+                node, index = match_music(offset + 1, tokens, type_next, fun_next)
                 tokens = [*tokens[:offset], node, *tokens[index:]]
                 pass  # 将来要对相关部分重新tokenize，并且要改type_next
 

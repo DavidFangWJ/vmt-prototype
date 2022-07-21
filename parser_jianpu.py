@@ -1,5 +1,3 @@
-# 旧版的LR分析器，不再维护了。
-
 from typing import List
 from item_type import ItemType, TokenNode
 
@@ -8,7 +6,7 @@ class JianpuNote:
     # 音符：note为数字（1～7），octave为上下加点数目（正上，负下，零不加），underline为减时线数目
     # 休止符：note和octave都是零
     # 增时线：note为-1，octave和underline都是零
-    def __init__(self, note, octave, underline):
+    def __init__(self, note: int, octave: int, underline: int):
         self.note = note
         self.octave = octave
         self.underline = underline
@@ -43,6 +41,5 @@ def tokenize(content: str) -> List[TokenNode]:
                 result[-1].content.underline = index
                 pos += 1
         pos += 1
-        pass
 
     return result
