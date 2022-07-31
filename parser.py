@@ -3,6 +3,7 @@ from typing import Tuple, List, Dict
 from item_type import ItemType, TokenNode
 import parser_jianpu
 import parser_staff
+import parser_lyric
 
 
 # 词典中每一项的键是栈顶-下一个字符的对，值是逆序存入的推导式右侧结果。
@@ -108,6 +109,28 @@ def match_music(index: int, tokens: List[TokenNode], node_type: ItemType, functi
     pass
 
 
+def match_lyric(index: int, tokens: List[TokenNode], node_type: ItemType, function)\
+        -> Tuple[TokenNode, int]:
+    """
+    已知前提条件：index的位置是关键词“歌词中”或“歌词英”的下一个位置
+    :param index:
+    :param tokens:
+    :param node_type:
+    :param function:
+    :return:
+    """
+    # 第一个括号
+    if tokens[index].type != ItemType.BRACE_LEFT:
+        print('错误：关键字后应有括号')
+        exit(1)
+    end_point = match_brace_close(index + 1, tokens)
+    lyric_section = original_text[tokens[index].content + 1:tokens[end_point].content]
+    result = function(lyric_section)
+    result = TokenNode(node_type, result)
+    return result, end_point + 1
+    pass
+
+
 def parse(tokens: List[TokenNode], _original_text: str) -> TokenNode:
     global original_text
     original_text = _original_text
@@ -123,7 +146,7 @@ def parse_impl(tokens: List[TokenNode]) -> TokenNode:
 
     str_to_type = {'简谱': (ItemType.JIANPU, parser_jianpu.tokenize),
                    '五线谱': (ItemType.STAFF, parser_staff.tokenize),
-                   '歌词中': (ItemType.LYRIC, None)}
+                   '歌词中': (ItemType.LYRIC, parser_lyric.tokenize_cn)}
 
     type_next = tokens[0].type
     while len(pred_stack) > 1:
@@ -131,9 +154,11 @@ def parse_impl(tokens: List[TokenNode]) -> TokenNode:
         if type_next == ItemType.KEYWORD:
             if tokens[offset].content in ['简谱', '五线谱', '歌词中']:
                 type_next, fun_next = str_to_type[tokens[offset].content]
-                node, index = match_music(offset + 1, tokens, type_next, fun_next)
+                if tokens[offset].content[0] == '歌':
+                    node, index = match_lyric(offset + 1, tokens, type_next, fun_next)
+                else:
+                    node, index = match_music(offset + 1, tokens, type_next, fun_next)
                 tokens = [*tokens[:offset], node, *tokens[index:]]
-                pass  # 将来要对相关部分重新tokenize，并且要改type_next
 
         # 先判断可不可以移出符号
         type_top = pred_stack[-1].type
